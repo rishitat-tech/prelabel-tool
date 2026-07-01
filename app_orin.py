@@ -486,8 +486,9 @@ def api_sequences():
             if not video_path.exists():
                 missing_videos.append(f"{view}.mp4")
 
-        # If metadata already exists in PDX, consider it complete.
-        has_metadata = client.exists(client.metadata_key(sequence_name))
+        # Local/Orin workflow: avoid remote HeadObject during listing.
+        # A sequence is complete locally if hoi_metadata.yaml or marker exists.
+        has_metadata = (seq_dir / "hoi_metadata.yaml").exists() or (seq_dir / ".prelabel_uploaded").exists()
 
         ready = len(missing_videos) == 0 and not has_metadata
 
@@ -566,6 +567,10 @@ def api_submit(sequence_name):
     yaml_text = yaml.safe_dump(payload, sort_keys=False)
     metadata_key = client.upload_yaml_text(sequence_name, yaml_text)
 
+    # Save local completion marker so this sequence disappears from ready list.
+    (seq_dir / "hoi_metadata.yaml").write_text(yaml_text)
+    (seq_dir / ".prelabel_uploaded").write_text(metadata_key + "\n")
+
     return jsonify({
         "ok": True,
         "uploaded_to": f"s3://{client.bucket}/{metadata_key}",
@@ -585,6 +590,8 @@ if __name__ == "__main__":
     url = "http://127.0.0.1:8000"
     print(f"Opening {url}")
 
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
 
-    app.run(debug=True, port=8000)
+    if os.getenv("AUTO_OPEN_BROWSER", "1") == "1":
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+
+    app.run(debug=True, port=8000, use_reloader=False)
