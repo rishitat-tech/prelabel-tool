@@ -220,3 +220,51 @@ pip install -r requirements.txt
 ```
 
 Then follow Option A or Option B above.
+
+## Orin cleanup, relabeling, and disk space
+
+The main workflow uses recordings stored on Orin:
+
+```text
+/mnt/nova_ssd/recordings/<sequence_name>/
+```
+
+After a successful submit, the tool uploads the completed sequence to PDX/CSS and writes local completion files on Orin:
+
+```text
+/mnt/nova_ssd/recordings/<sequence_name>/hoi_metadata.yaml
+/mnt/nova_ssd/recordings/<sequence_name>/.prelabel_uploaded
+```
+
+These local files make the sequence disappear from the ready list so the next sequence appears.
+
+### Relabel a sequence
+
+If the label was wrong and the sequence should be labeled again, delete only the local completion files:
+
+```bash
+rm /mnt/nova_ssd/recordings/<sequence_name>/hoi_metadata.yaml
+rm /mnt/nova_ssd/recordings/<sequence_name>/.prelabel_uploaded
+```
+
+Then rerun the app. The sequence will show again. Submitting again uploads to the same PDX/CSS path.
+
+### Free space on Orin
+
+Orin storage is needed for collecting more data. After confirming a sequence was uploaded successfully to PDX/CSS, the local Orin sequence folder can be deleted to free disk space:
+
+```bash
+rm -rf /mnt/nova_ssd/recordings/<sequence_name>/
+```
+
+Important: only delete the local Orin folder after confirming the upload is complete. Deleting local Orin files does not delete the uploaded sequence from PDX/CSS.
+
+### What deletion means
+
+Deleting these local files only affects what is stored on Orin:
+
+```text
+/mnt/nova_ssd/recordings/<sequence_name>/
+```
+
+It does not delete files from PDX/CSS. The uploaded data remains in the configured PDX/CSS destination.
