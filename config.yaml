@@ -1,0 +1,10 @@
+bucket: recordings
+endpoint_url: https://pdx.s8k.io
+
+# IMPORTANT: test prefix only. Do not use production yet.
+base_prefix: v2d/multiview_test
+location: sc_office_4exo_1
+data_subdir: data
+
+# Optional. Leave empty unless you use an AWS profile.
+profile:

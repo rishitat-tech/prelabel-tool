@@ -1,0 +1,6 @@
+bucket: recordings
+endpoint_url: https://pdx.s8k.io
+base_prefix: v2d/multiview
+location: sc_office_4exo_1
+data_subdir: data_output
+profile:
