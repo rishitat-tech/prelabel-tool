@@ -4,6 +4,7 @@ import re
 import yaml
 import webbrowser
 import threading
+import subprocess
 from pathlib import Path
 
 from css_client import CssClient, load_config, CAMERA_VIEWS
@@ -20,6 +21,45 @@ def normalize_id(value):
     value = re.sub(r"[^a-z0-9]+", "_", value)
     value = value.strip("_")
     return value
+
+
+def ensure_sequence_videos(seq_dir):
+    missing = []
+    for view in CAMERA_VIEWS:
+        video_path = seq_dir / f"{view}.mp4"
+        if not video_path.exists():
+            missing.append(f"{view}.mp4")
+
+    if not missing:
+        return []
+
+    if os.getenv("AUTO_EXTRACT_MCAP", "0") != "1":
+        return missing
+
+    mcap_files = sorted(seq_dir.glob("*.mcap"))
+    if not mcap_files:
+        return missing
+
+    print(f"Auto-extracting MP4s from MCAP for sequence: {seq_dir.name}")
+
+    cmd = ["python", "extract_mcap_videos.py", str(seq_dir)]
+
+    env = os.environ.copy()
+    max_frames = os.getenv("MAX_FRAMES")
+    if max_frames:
+        env["MAX_FRAMES"] = max_frames
+
+    subprocess.run(cmd, check=True, env=env)
+
+    missing_after = []
+    for view in CAMERA_VIEWS:
+        video_path = seq_dir / f"{view}.mp4"
+        if not video_path.exists():
+            missing_after.append(f"{view}.mp4")
+
+    return missing_after
+
+
 
 
 HTML = """
@@ -480,11 +520,7 @@ def api_sequences():
         if sequence_filter and sequence_name != sequence_filter:
             continue
 
-        missing_videos = []
-        for view in CAMERA_VIEWS:
-            video_path = seq_dir / f"{view}.mp4"
-            if not video_path.exists():
-                missing_videos.append(f"{view}.mp4")
+        missing_videos = ensure_sequence_videos(seq_dir)
 
         # Local/Orin workflow: avoid remote HeadObject during listing.
         # A sequence is complete locally if hoi_metadata.yaml or marker exists.
