@@ -297,3 +297,17 @@ Check if it is already marked complete:
 ```bash
 ls -lah /mnt/nova_ssd/recordings/<sequence_name> | grep -E "hoi_metadata|prelabel"
 ```
+
+## Automatic MCAP extraction
+
+The app now supports automatic MCAP extraction.
+
+Use this daily app command on Orin:
+
+```bash
+CONFIG_PATH=config_prod.yaml ALLOW_PROD_UPLOAD=1 LOCAL_RECORDINGS_DIR=/mnt/nova_ssd/recordings ONE_AT_A_TIME=1 AUTO_OPEN_BROWSER=0 AUTO_EXTRACT_MCAP=1 python app_orin.py
+```
+
+AUTO_EXTRACT_MCAP=1 automatically creates the four required MP4 videos from the sequence MCAP if they are missing. If MP4s already exist, the app uses them directly.
+
+The first time a sequence is shown, it may take extra time while videos are extracted. After that, the MP4s remain in the sequence folder and load faster.
