@@ -135,6 +135,8 @@ http://127.0.0.1:8001
 ```
 
 You should see one ready sequence.
+Note: AUTO_EXTRACT_MCAP=1 automatically creates the four required MP4 videos from the sequence MCAP if they are missing. If MP4s already exist, the app uses them directly. The first time a sequence is shown, it may take extra time while videos are extracted. After that, the MP4s remain in the sequence folder and load faster.
+
 Note: `AUTO_EXTRACT_MCAP=1` automatically creates the 4 required MP4 videos from the sequence MCAP if they are missing. This means users can start the app and label sequences without running a separate extraction command.
 
 
