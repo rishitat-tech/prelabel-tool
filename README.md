@@ -107,7 +107,7 @@ right_stereo_camera_left.mp4
 Start app:
 
 ```bash
-CONFIG_PATH=config_prod.yaml ALLOW_PROD_UPLOAD=1 LOCAL_RECORDINGS_DIR=/mnt/nova_ssd/recordings ONE_AT_A_TIME=1 AUTO_OPEN_BROWSER=0 python app_orin.py
+CONFIG_PATH=config_prod.yaml ALLOW_PROD_UPLOAD=1 LOCAL_RECORDINGS_DIR=/mnt/nova_ssd/recordings ONE_AT_A_TIME=1 AUTO_OPEN_BROWSER=0 AUTO_EXTRACT_MCAP=1 python app_orin.py
 ```
 
 Leave this terminal open. Expected output:
@@ -135,6 +135,8 @@ http://127.0.0.1:8001
 ```
 
 You should see one ready sequence.
+Note: `AUTO_EXTRACT_MCAP=1` automatically creates the 4 required MP4 videos from the sequence MCAP if they are missing. This means users can start the app and label sequences without running a separate extraction command.
+
 
 ## How to pre-label
 
