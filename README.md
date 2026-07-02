@@ -83,26 +83,7 @@ export AWS_SECRET_ACCESS_KEY="$CSS_SECRET_KEY"
 export AWS_DEFAULT_REGION="us-east-1"
 ```
 
-Generate the 4 MP4 videos from the MCAP before labeling:
-
-```bash
-python extract_mcap_videos.py /mnt/nova_ssd/recordings/<sequence_name>
-```
-
-For quick testing, extract only the first 300 frames:
-
-```bash
-MAX_FRAMES=300 python extract_mcap_videos.py /mnt/nova_ssd/recordings/<sequence_name>
-```
-
-This creates:
-
-```text
-front_stereo_camera_left.mp4
-back_stereo_camera_left.mp4
-left_stereo_camera_left.mp4
-right_stereo_camera_left.mp4
-```
+MP4 videos are generated automatically by the app when `AUTO_EXTRACT_MCAP=1` is set.
 
 Start app:
 
