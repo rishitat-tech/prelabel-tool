@@ -1,0 +1,238 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pre-label Tool User Guide</title>
+<style>
+@page { margin: 0.55in; }
+body { font-family: Arial, sans-serif; font-size: 11px; line-height: 1.3; color: #222; }
+h1 { font-size: 22px; margin: 0 0 8px 0; padding-bottom: 5px; border-bottom: 2px solid #76b900; }
+h2 { font-size: 15px; margin: 14px 0 5px 0; color: #111; border-bottom: 1px solid #ddd; padding-bottom: 2px; }
+h3 { font-size: 12px; margin: 10px 0 4px 0; }
+p { margin: 4px 0; }
+ul, ol { margin-top: 4px; margin-bottom: 6px; padding-left: 20px; }
+li { margin-bottom: 2px; }
+pre { background: #f7f7f7; border: 1px solid #ddd; border-left: 4px solid #76b900; padding: 6px 8px; margin: 5px 0 7px 0; white-space: pre-wrap; word-wrap: break-word; font-size: 9.5px; line-height: 1.25; }
+code { background: #f2f2f2; padding: 1px 3px; }
+.note { background: #f7fff0; border: 1px solid #cce8aa; padding: 7px; margin: 6px 0; }
+.page-break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<h1>Pre-label Tool User Guide</h1>
+
+<h2>What is this tool?</h2>
+<p>This is a multi-view pre-labeling tool for Orin recordings. It lets a user view recorded multi-view sequences in a browser, fill metadata, draw bounding boxes, submit labels, upload completed sequences to PDX/CSS, and move to the next ready sequence.</p>
+
+<p><b>Main Orin recordings path:</b></p>
+<pre>/mnt/nova_ssd/recordings</pre>
+
+<h2>Main workflow</h2>
+<pre>Orin recordings
+/mnt/nova_ssd/recordings/&lt;sequence_name&gt;/
+  → Pre-label UI reads local videos from Orin
+  → If MP4s are missing, app extracts them from MCAP automatically
+  → User fills metadata and draws bounding boxes
+  → Submit uploads videos + hoi_metadata.yaml to PDX/CSS
+  → Local completion markers are written
+  → Completed sequence disappears
+  → Next ready sequence appears</pre>
+
+<h2>Important setup note</h2>
+<div class="note">
+Setup is needed only once on the shared Orin. If the repo already exists at <code>/home/nvidia/prelabel-tool</code>, users do not need to clone or install again. Most users only need the Daily Usage steps.
+</div>
+
+<p><b>Shared Orin:</b></p>
+<pre>nvidia@nova-devkit-6.dyn.nvidia.com</pre>
+
+<h2>Required sequence format</h2>
+<p>Each sequence is expected under:</p>
+<pre>/mnt/nova_ssd/recordings/&lt;sequence_name&gt;/</pre>
+
+<p>The UI uses these 4 MP4 files:</p>
+<pre>front_stereo_camera_left.mp4
+back_stereo_camera_left.mp4
+left_stereo_camera_left.mp4
+right_stereo_camera_left.mp4</pre>
+
+<p>If these MP4s are missing, the app automatically creates them from the sequence MCAP when <code>AUTO_EXTRACT_MCAP=1</code> is set.</p>
+
+<h1 class="page-break">Daily Usage: Run from Orin</h1>
+
+<h2>Terminal 1: start the app on Orin</h2>
+<p>Open a terminal on your Mac and SSH into Orin:</p>
+<pre>ssh nvidia@nova-devkit-6.dyn.nvidia.com</pre>
+
+<p>Go to the repo:</p>
+<pre>cd /home/nvidia/prelabel-tool</pre>
+
+<p>Activate the Python environment:</p>
+<pre>source venv/bin/activate</pre>
+
+<p>Set credentials:</p>
+<pre>export CSS_ACCESS_KEY=YOUR_ACCESS_KEY
+export CSS_SECRET_KEY=YOUR_SECRET_KEY
+export AWS_ACCESS_KEY_ID="$CSS_ACCESS_KEY"
+export AWS_SECRET_ACCESS_KEY="$CSS_SECRET_KEY"
+export AWS_DEFAULT_REGION="us-east-1"</pre>
+
+<p>Start the app:</p>
+<pre>CONFIG_PATH=config_prod.yaml ALLOW_PROD_UPLOAD=1 LOCAL_RECORDINGS_DIR=/mnt/nova_ssd/recordings ONE_AT_A_TIME=1 AUTO_OPEN_BROWSER=0 AUTO_EXTRACT_MCAP=1 python app_orin.py</pre>
+
+<p>Leave this terminal open. Expected output includes:</p>
+<pre>Running on http://127.0.0.1:8000</pre>
+
+<div class="note">
+<b>Notes:</b><br>
+<code>AUTO_OPEN_BROWSER=0</code> means the app will not try to open a browser on Orin.<br>
+<code>AUTO_EXTRACT_MCAP=1</code> means the app will automatically create the four required MP4 videos from the sequence MCAP if they are missing.<br>
+If MP4s already exist, the app uses them directly. The first time a sequence is shown, it may take extra time while videos are extracted. After that, the MP4s remain in the sequence folder and load faster.
+</div>
+
+<h2>How to open another terminal</h2>
+<p>You need a second terminal for the SSH tunnel.</p>
+<ul>
+<li><b>Mac Terminal:</b> <code>Cmd + N</code> for new window, or <code>Cmd + T</code> for new tab.</li>
+<li><b>VS Code:</b> use <code>Terminal → New Terminal</code>.</li>
+</ul>
+
+<h2>Terminal 2: open SSH tunnel from Mac</h2>
+<pre>ssh -N -L 8001:127.0.0.1:8000 nvidia@nova-devkit-6.dyn.nvidia.com</pre>
+<p>This terminal may look like it is stuck. That is normal. Leave it open.</p>
+
+<h2>Open the browser</h2>
+<pre>http://127.0.0.1:8001</pre>
+<p>You should see one ready sequence.</p>
+
+<h2>How to pre-label a sequence</h2>
+<ol>
+<li>Open the displayed sequence.</li>
+<li>Fill required metadata: <code>calib_sequence</code>, <code>object_id</code>, <code>person_id</code>, <code>action_description</code>, <code>action_language</code>.</li>
+<li>Pause the video where the object is clearly visible.</li>
+<li>Draw one bounding box for each camera view: front, back, left, and right.</li>
+<li>Click <b>Submit</b>.</li>
+</ol>
+<p>After submit, the completed sequence uploads to PDX/CSS and the next ready sequence appears.</p>
+
+<h1 class="page-break">After Submit, Relabeling, and Cleanup</h1>
+
+<h2>What happens after submit?</h2>
+<p>The tool uploads these files to PDX/CSS:</p>
+<pre>front_stereo_camera_left.mp4
+back_stereo_camera_left.mp4
+left_stereo_camera_left.mp4
+right_stereo_camera_left.mp4
+hoi_metadata.yaml</pre>
+
+<p>It also writes local completion files on Orin:</p>
+<pre>/mnt/nova_ssd/recordings/&lt;sequence_name&gt;/hoi_metadata.yaml
+/mnt/nova_ssd/recordings/&lt;sequence_name&gt;/.prelabel_uploaded</pre>
+
+<p>These local files make the sequence disappear from the ready list.</p>
+
+<h2>Relabel a sequence</h2>
+<p>If the label was wrong and the sequence needs to be labeled again, delete only the local completion files:</p>
+<pre>rm /mnt/nova_ssd/recordings/&lt;sequence_name&gt;/hoi_metadata.yaml
+rm /mnt/nova_ssd/recordings/&lt;sequence_name&gt;/.prelabel_uploaded</pre>
+<p>Then run the app again. The sequence will show again. Submitting again uploads to the same PDX/CSS path. Deleting local completion files does not delete anything from PDX/CSS.</p>
+
+<h2>Free Orin disk space</h2>
+<p>After confirming the upload is complete, delete the local Orin sequence folder to free space:</p>
+<pre>rm -rf /mnt/nova_ssd/recordings/&lt;sequence_name&gt;/</pre>
+<p>This deletes only local Orin files. It does not delete the uploaded sequence from PDX/CSS.</p>
+
+<h2>Bulk cleanup in small batches</h2>
+<p>Preview 5 completed folders:</p>
+<pre>cd /home/nvidia/prelabel-tool && source venv/bin/activate && CLEANUP_LIMIT=5 LOCAL_RECORDINGS_DIR=/mnt/nova_ssd/recordings python cleanup_completed_orin_sequences.py</pre>
+
+<p>Actually delete 5 completed local folders:</p>
+<pre>cd /home/nvidia/prelabel-tool && source venv/bin/activate && DRY_RUN=0 ALLOW_DELETE_LOCAL=1 CLEANUP_LIMIT=5 LOCAL_RECORDINGS_DIR=/mnt/nova_ssd/recordings python cleanup_completed_orin_sequences.py</pre>
+
+<p>This only deletes local Orin folders that have <code>.prelabel_uploaded</code>. It does not delete anything from PDX/CSS.</p>
+
+<h2>Run one specific sequence</h2>
+<p>Use this for testing one known sequence:</p>
+<pre>cd /home/nvidia/prelabel-tool
+source venv/bin/activate
+CONFIG_PATH=config_prod.yaml ALLOW_PROD_UPLOAD=1 LOCAL_RECORDINGS_DIR=/mnt/nova_ssd/recordings ONE_AT_A_TIME=1 AUTO_OPEN_BROWSER=0 AUTO_EXTRACT_MCAP=1 SEQUENCE_NAME=&lt;sequence_name&gt; python app_orin.py</pre>
+
+<h2>Optional: run with local downloaded recordings</h2>
+<p>Main usage is Orin. This is only if recordings are already downloaded locally.</p>
+<p>Example local path:</p>
+<pre>/Users/&lt;your_user&gt;/recordings</pre>
+
+<p>Run locally:</p>
+<pre>cd /path/to/prelabel-tool
+source venv/bin/activate
+export CSS_ACCESS_KEY=YOUR_ACCESS_KEY
+export CSS_SECRET_KEY=YOUR_SECRET_KEY
+export AWS_ACCESS_KEY_ID="$CSS_ACCESS_KEY"
+export AWS_SECRET_ACCESS_KEY="$CSS_SECRET_KEY"
+export AWS_DEFAULT_REGION="us-east-1"
+CONFIG_PATH=config_prod.yaml ALLOW_PROD_UPLOAD=1 LOCAL_RECORDINGS_DIR=/Users/&lt;your_user&gt;/recordings ONE_AT_A_TIME=1 AUTO_EXTRACT_MCAP=1 python app_orin.py</pre>
+
+<p>Open directly:</p>
+<pre>http://127.0.0.1:8000</pre>
+<p>No SSH tunnel is needed for local mode.</p>
+
+<h1 class="page-break">One-time Setup and Troubleshooting</h1>
+
+<h2>One-time setup on Orin</h2>
+<p>Only needed once on the shared Orin.</p>
+<pre>ssh nvidia@nova-devkit-6.dyn.nvidia.com
+cd /home/nvidia
+git clone https://github.com/rishitat-tech/prelabel-tool.git
+cd /home/nvidia/prelabel-tool
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt</pre>
+<p>After this, users should follow Daily Usage.</p>
+
+<h2>Troubleshooting</h2>
+
+<h3>python cannot open app_orin.py</h3>
+<p>This means you are in the wrong folder.</p>
+<pre>cd /home/nvidia/prelabel-tool</pre>
+
+<h3>Browser does not open</h3>
+<p>Check app on Orin:</p>
+<pre>curl -I http://127.0.0.1:8000</pre>
+<p>Expected:</p>
+<pre>HTTP/1.1 200 OK</pre>
+
+<p>Check tunnel on Mac:</p>
+<pre>curl -I http://127.0.0.1:8001</pre>
+<p>Expected:</p>
+<pre>HTTP/1.1 200 OK</pre>
+
+<h3>No sequences show up</h3>
+<p>Check the sequence folder exists:</p>
+<pre>ls -lah /mnt/nova_ssd/recordings/&lt;sequence_name&gt;/</pre>
+
+<p>Check if it is already marked complete:</p>
+<pre>ls -lah /mnt/nova_ssd/recordings/&lt;sequence_name&gt; | grep -E "hoi_metadata|prelabel"</pre>
+
+<p>If MP4s are missing but MCAP exists, make sure the app command includes <code>AUTO_EXTRACT_MCAP=1</code>.</p>
+
+<h1>Quick Command Summary</h1>
+
+<h2>Terminal 1</h2>
+<pre>ssh nvidia@nova-devkit-6.dyn.nvidia.com
+cd /home/nvidia/prelabel-tool
+source venv/bin/activate
+export CSS_ACCESS_KEY=YOUR_ACCESS_KEY
+export CSS_SECRET_KEY=YOUR_SECRET_KEY
+export AWS_ACCESS_KEY_ID="$CSS_ACCESS_KEY"
+export AWS_SECRET_ACCESS_KEY="$CSS_SECRET_KEY"
+export AWS_DEFAULT_REGION="us-east-1"
+CONFIG_PATH=config_prod.yaml ALLOW_PROD_UPLOAD=1 LOCAL_RECORDINGS_DIR=/mnt/nova_ssd/recordings ONE_AT_A_TIME=1 AUTO_OPEN_BROWSER=0 AUTO_EXTRACT_MCAP=1 python app_orin.py</pre>
+
+<h2>Terminal 2</h2>
+<pre>ssh -N -L 8001:127.0.0.1:8000 nvidia@nova-devkit-6.dyn.nvidia.com</pre>
+
+<h2>Browser</h2>
+<pre>http://127.0.0.1:8001</pre>
+
+</body>
+</html>
