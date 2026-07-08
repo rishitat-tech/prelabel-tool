@@ -1,5 +1,8 @@
 from flask import Flask, render_template_string, request, jsonify, send_file, abort
 import os
+import json
+from datetime import datetime, timezone
+
 import re
 import yaml
 import webbrowser
@@ -361,12 +364,24 @@ canvas.addEventListener("pointerup", function(event) {
 
   if (finalBox.width > 5 && finalBox.height > 5) {
     const normalized = normalizeBox(finalBox);
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = video.videoWidth / rect.width;
+    const scaleY = video.videoHeight / rect.height;
+
     boxesByView[currentView] = {
       frame_idx: Math.round(video.currentTime * FPS),
+
+      // Normalized box used by the browser UI for redraw.
       x: normalized.x,
       y: normalized.y,
       width: normalized.width,
-      height: normalized.height
+      height: normalized.height,
+
+      // Pixel box used by backend export: labeled_bboxes/<camera>.json.
+      x0: finalBox.x * scaleX,
+      y0: finalBox.y * scaleY,
+      x1: (finalBox.x + finalBox.width) * scaleX,
+      y1: (finalBox.y + finalBox.height) * scaleY
     };
   }
 
@@ -572,6 +587,163 @@ def local_video(sequence_name, filename):
     return send_file(video_path)
 
 
+
+
+def utc_now_str():
+    return str(datetime.now(timezone.utc))
+
+
+def build_hoi_metadata(payload, sequence_name):
+    """
+    New hoi_metadata.yaml format.
+
+    object.bbox and object.prompt are intentionally NOT written here.
+    Bboxes are written separately to labeled_bboxes/<camera_view>.json.
+    """
+    return {
+        "action_desc": payload.get("action_description", ""),
+        "calib_seq_name": payload.get("calib_sequence", ""),
+        "object": {
+            "id": payload.get("object_id", ""),
+        },
+        "person": {
+            "id": payload.get("person_id", ""),
+        },
+        "record_datetime": payload.get("record_datetime") or utc_now_str(),
+        "rig": payload.get("rig", "nova_hawk"),
+        "rig_name": payload.get("location", client.location),
+        "session_id": sequence_name,
+        "upload_datetime": utc_now_str(),
+    }
+
+
+def bbox_to_xyxy(raw_box):
+    """
+    Convert current frontend bbox format to required x0/y0/x1/y1 format.
+    """
+
+    if raw_box is None:
+        raise ValueError("Missing bbox")
+
+    if "box" in raw_box and isinstance(raw_box["box"], dict):
+        raw_box = raw_box["box"]
+
+    if all(k in raw_box for k in ("x0", "y0", "x1", "y1")):
+        return {
+            "x0": float(raw_box["x0"]),
+            "y0": float(raw_box["y0"]),
+            "x1": float(raw_box["x1"]),
+            "y1": float(raw_box["y1"]),
+        }
+
+    if all(k in raw_box for k in ("x", "y", "w", "h")):
+        x = float(raw_box["x"])
+        y = float(raw_box["y"])
+        w = float(raw_box["w"])
+        h = float(raw_box["h"])
+        return {
+            "x0": x,
+            "y0": y,
+            "x1": x + w,
+            "y1": y + h,
+        }
+
+    if all(k in raw_box for k in ("x", "y", "width", "height")):
+        x = float(raw_box["x"])
+        y = float(raw_box["y"])
+        w = float(raw_box["width"])
+        h = float(raw_box["height"])
+        return {
+            "x0": x,
+            "y0": y,
+            "x1": x + w,
+            "y1": y + h,
+        }
+
+    if all(k in raw_box for k in ("left", "top", "width", "height")):
+        x = float(raw_box["left"])
+        y = float(raw_box["top"])
+        w = float(raw_box["width"])
+        h = float(raw_box["height"])
+        return {
+            "x0": x,
+            "y0": y,
+            "x1": x + w,
+            "y1": y + h,
+        }
+
+    raise ValueError(f"Unsupported bbox format: {raw_box}")
+
+
+def bbox_frame_idx(raw_box):
+    """
+    Frame index is stored as a 6-digit string key in the JSON output.
+    """
+    if raw_box is None:
+        return 0
+
+    for key in ("frame_idx", "frameIndex", "frame"):
+        if key in raw_box and raw_box[key] is not None:
+            return int(raw_box[key])
+
+    return 0
+
+
+def write_labeled_bbox_files(seq_dir, payload):
+    """
+    Writes one bbox JSON file per camera view:
+
+      labeled_bboxes/<camera_view>.json
+
+    Format:
+
+      {
+        "000000": [
+          {
+            "label": "blue_trash_can",
+            "box": {
+              "x0": ...,
+              "y0": ...,
+              "x1": ...,
+              "y1": ...
+            }
+          }
+        ]
+      }
+    """
+    label = payload.get("object_id", "")
+    per_view_boxes = payload.get("per_view_bounding_boxes") or {}
+
+    output_dir = seq_dir / "labeled_bboxes"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    written_paths = []
+
+    for view, raw_box in per_view_boxes.items():
+        if raw_box is None:
+            continue
+
+        frame_idx = bbox_frame_idx(raw_box)
+        frame_key = f"{frame_idx:06d}"
+
+        output = {
+            frame_key: [
+                {
+                    "label": label,
+                    "box": bbox_to_xyxy(raw_box),
+                }
+            ]
+        }
+
+        output_path = output_dir / f"{view}.json"
+
+        with open(output_path, "w") as f:
+            json.dump(output, f, indent=2)
+
+        written_paths.append(output_path)
+
+    return written_paths
+
 @app.route("/api/sequences/<sequence_name>/submit", methods=["POST"])
 def api_submit(sequence_name):
     payload = request.get_json()
@@ -586,7 +758,15 @@ def api_submit(sequence_name):
     if not seq_dir.exists():
         return jsonify({"ok": False, "error": f"Missing local sequence folder: {seq_dir}"}), 404
 
+    hoi_metadata = build_hoi_metadata(payload, sequence_name)
+
+    try:
+        bbox_paths = write_labeled_bbox_files(seq_dir, payload)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Failed to write labeled bbox files: {e}"}), 400
+
     uploaded_videos = []
+    uploaded_bboxes = []
 
     # Upload videos first.
     for view in CAMERA_VIEWS:
@@ -599,8 +779,14 @@ def api_submit(sequence_name):
         key = client.upload_file(local_path, sequence_name, filename)
         uploaded_videos.append(f"s3://{client.bucket}/{key}")
 
+    # Upload bbox JSON files before metadata.
+    for bbox_path in bbox_paths:
+        relative_name = bbox_path.relative_to(seq_dir).as_posix()
+        key = client.upload_file(bbox_path, sequence_name, relative_name)
+        uploaded_bboxes.append(f"s3://{client.bucket}/{key}")
+
     # Upload metadata last, so metadata means sequence is complete.
-    yaml_text = yaml.safe_dump(payload, sort_keys=False)
+    yaml_text = yaml.safe_dump(hoi_metadata, sort_keys=False)
     metadata_key = client.upload_yaml_text(sequence_name, yaml_text)
 
     # Save local completion marker so this sequence disappears from ready list.
@@ -611,7 +797,8 @@ def api_submit(sequence_name):
         "ok": True,
         "uploaded_to": f"s3://{client.bucket}/{metadata_key}",
         "uploaded_videos": uploaded_videos,
-        "metadata": payload,
+        "uploaded_bboxes": uploaded_bboxes,
+        "metadata": hoi_metadata,
     })
 
 
