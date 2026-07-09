@@ -65,6 +65,7 @@ On Orin, go to the repo:
 
 ```bash
 cd /home/nvidia/prelabel-tool
+git pull origin main
 ```
 
 Activate environment:
