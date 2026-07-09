@@ -25,7 +25,7 @@ Pre-label UI reads local videos from Orin
         ↓
 User fills metadata and draws bounding boxes
         ↓
-Submit uploads 4 videos + hoi_metadata.yaml to PDX/CSS
+Submit uploads 4 videos + hoi_metadata.yaml + labeled_bboxes/*.json to PDX/CSS
         ↓
 Local completion markers are written
         ↓
@@ -149,6 +149,10 @@ back_stereo_camera_left.mp4
 left_stereo_camera_left.mp4
 right_stereo_camera_left.mp4
 hoi_metadata.yaml
+labeled_bboxes/front_stereo_camera_left.json
+labeled_bboxes/back_stereo_camera_left.json
+labeled_bboxes/left_stereo_camera_left.json
+labeled_bboxes/right_stereo_camera_left.json
 ```
 
 It also writes local completion files on Orin:
