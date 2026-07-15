@@ -142,7 +142,7 @@ HTML = """
       <h3>Bounding boxes</h3>
       <div id="viewStatuses"></div>
 
-      <button onclick="clearCurrentBox()" style="margin-top:12px;">Clear current view box</button>
+      <button onclick="clearCurrentBox()" style="margin-top:12px;">Clear current frame box</button>
       <pre id="status"></pre>
     </div>
 
@@ -168,6 +168,7 @@ HTML = """
         <button onclick="togglePlay()">Play/Pause</button>
         <button onclick="stepFrame(-1)">-1 frame</button>
         <button onclick="stepFrame(1)">+1 frame</button>
+        <button onclick="copyPreviousFrameBox()">Copy previous frame bbox</button>
         <input id="seek" type="range" min="0" max="1000" value="0" oninput="seekVideo()">
         <span id="timeLabel">0.00s</span>
         <span id="frameLabel">frame 0</span>
@@ -196,10 +197,10 @@ let currentX = 0;
 let currentY = 0;
 
 let boxesByView = {
-  front_stereo_camera_left: null,
-  back_stereo_camera_left: null,
-  left_stereo_camera_left: null,
-  right_stereo_camera_left: null
+  front_stereo_camera_left: {},
+  back_stereo_camera_left: {},
+  left_stereo_camera_left: {},
+  right_stereo_camera_left: {}
 };
 
 async function loadSequences() {
@@ -242,10 +243,10 @@ async function openSequence(sequenceName) {
   videoUrls = data.videos;
 
   boxesByView = {
-    front_stereo_camera_left: null,
-    back_stereo_camera_left: null,
-    left_stereo_camera_left: null,
-    right_stereo_camera_left: null
+    front_stereo_camera_left: {},
+    back_stereo_camera_left: {},
+    left_stereo_camera_left: {},
+    right_stereo_camera_left: {}
   };
 
   currentView = "front_stereo_camera_left";
@@ -286,6 +287,10 @@ function switchCameraView() {
 
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 
+function currentFrameIdx() {
+  return Math.round((video.currentTime || 0) * FPS);
+}
+
 function resizeCanvasToVideo() {
   const rect = video.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -321,8 +326,17 @@ function draw() {
   ctx.clearRect(0, 0, rect.width, rect.height);
 
   let boxToDraw = null;
-  if (drawing) boxToDraw = makeBox(startX, startY, currentX, currentY);
-  else if (boxesByView[currentView]) boxToDraw = denormalizeBox(boxesByView[currentView]);
+
+  if (drawing) {
+    boxToDraw = makeBox(startX, startY, currentX, currentY);
+  } else {
+    const frameIdx = currentFrameIdx();
+    const frameBox = boxesByView[currentView][frameIdx];
+
+    if (frameBox) {
+      boxToDraw = denormalizeBox(frameBox);
+    }
+  }
 
   if (boxToDraw) {
     ctx.lineWidth = 3;
@@ -368,8 +382,10 @@ canvas.addEventListener("pointerup", function(event) {
     const scaleX = video.videoWidth / rect.width;
     const scaleY = video.videoHeight / rect.height;
 
-    boxesByView[currentView] = {
-      frame_idx: Math.round(video.currentTime * FPS),
+    const frameIdx = currentFrameIdx();
+
+    boxesByView[currentView][frameIdx] = {
+      frame_idx: frameIdx,
 
       // Normalized box used by the browser UI for redraw.
       x: normalized.x,
@@ -391,7 +407,35 @@ canvas.addEventListener("pointerup", function(event) {
 });
 
 function clearCurrentBox() {
-  boxesByView[currentView] = null;
+  const frameIdx = currentFrameIdx();
+  delete boxesByView[currentView][frameIdx];
+
+  updateViewStatuses();
+  validateForm();
+  draw();
+}
+
+function copyPreviousFrameBox() {
+  const frameIdx = currentFrameIdx();
+  const prevFrameIdx = frameIdx - 1;
+
+  if (prevFrameIdx < 0) {
+    alert("Already at first frame.");
+    return;
+  }
+
+  const prevBox = boxesByView[currentView][prevFrameIdx];
+
+  if (!prevBox) {
+    alert("No bbox found on previous frame.");
+    return;
+  }
+
+  boxesByView[currentView][frameIdx] = {
+    ...prevBox,
+    frame_idx: frameIdx
+  };
+
   updateViewStatuses();
   validateForm();
   draw();
@@ -430,9 +474,18 @@ video.addEventListener("loadedmetadata", function() {
   resizeCanvasToVideo();
   updateTimeLabels();
 });
-video.addEventListener("timeupdate", updateTimeLabels);
+video.addEventListener("timeupdate", function() {
+  updateTimeLabels();
+  draw();
+});
+video.addEventListener("seeked", function() {
+  updateTimeLabels();
+  draw();
+});
 window.addEventListener("resize", resizeCanvasToVideo);
-new ResizeObserver(function() { resizeCanvasToVideo(); }).observe(video);
+if (window.ResizeObserver) {
+  new ResizeObserver(function() { resizeCanvasToVideo(); }).observe(video);
+}
 
 function getValue(id) { return document.getElementById(id).value.trim(); }
 
@@ -443,7 +496,9 @@ function setCheck(id, ok, message) {
 }
 
 function allViewsHaveBoxes() {
-  return CAMERA_VIEWS.every(function(view) { return boxesByView[view] !== null; });
+  return CAMERA_VIEWS.every(function(view) {
+    return Object.keys(boxesByView[view]).length > 0;
+  });
 }
 
 function updateViewStatuses() {
@@ -451,10 +506,16 @@ function updateViewStatuses() {
   container.innerHTML = "";
 
   for (const view of CAMERA_VIEWS) {
+    const count = Object.keys(boxesByView[view]).length;
     const div = document.createElement("div");
     div.className = "view-status";
-    if (boxesByView[view]) div.innerHTML = '<span class="complete">✓</span> ' + view;
-    else div.innerHTML = '<span class="missing">✗</span> ' + view;
+
+    if (count > 0) {
+      div.innerHTML = '<span class="complete">✓</span> ' + view + " — " + count + " frames labeled";
+    } else {
+      div.innerHTML = '<span class="missing">✗</span> ' + view + " — 0 frames labeled";
+    }
+
     container.appendChild(div);
   }
 }
@@ -473,7 +534,39 @@ function validateForm() {
   setCheck("actionCheck", actionOk, "Required");
   setCheck("actionLanguageCheck", actionLanguageOk, "Required");
 
-  document.getElementById("submitBtn").disabled = !(calibOk && objectOk && personOk && actionOk && actionLanguageOk && bboxOk);
+  const missing = [];
+
+  if (!calibOk) missing.push("calib_sequence");
+  if (!objectOk) missing.push("object_id");
+  if (!personOk) missing.push("person_id");
+  if (!actionOk) missing.push("action_description");
+  if (!actionLanguageOk) missing.push("action_language");
+
+  for (const view of CAMERA_VIEWS) {
+    if (Object.keys(boxesByView[view]).length === 0) {
+      missing.push(view + " bbox");
+    }
+  }
+
+  document.getElementById("status").textContent =
+    missing.length === 0
+      ? "Ready to submit."
+      : "Missing required items:\\n- " + missing.join("\\n- ");
+
+  document.getElementById("submitBtn").disabled = missing.length !== 0;
+}
+
+function boxesForSubmit() {
+  const output = {};
+
+  for (const view of CAMERA_VIEWS) {
+    output[view] = Object.values(boxesByView[view])
+      .sort(function(a, b) {
+        return a.frame_idx - b.frame_idx;
+      });
+  }
+
+  return output;
 }
 
 async function submitMetadata() {
@@ -485,7 +578,7 @@ async function submitMetadata() {
     person_id: getValue("person_id").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""),
     action_description: getValue("action_description"),
     action_language: getValue("action_language"),
-    per_view_bounding_boxes: boxesByView
+    per_view_bounding_boxes: boxesForSubmit()
   };
 
   const res = await fetch("/api/sequences/" + selectedSequence + "/submit", {
@@ -691,49 +784,60 @@ def bbox_frame_idx(raw_box):
 
 def write_labeled_bbox_files(seq_dir, payload):
     """
-    Writes one bbox JSON file per camera view:
+    Writes one bbox JSON file per camera view.
 
-      labeled_bboxes/<camera_view>.json
+    Supports both formats:
 
-    Format:
+    Old:
+      per_view_bounding_boxes:
+        front_stereo_camera_left: {frame_idx, x0, y0, x1, y1}
 
-      {
-        "000000": [
-          {
-            "label": "blue_trash_can",
-            "box": {
-              "x0": ...,
-              "y0": ...,
-              "x1": ...,
-              "y1": ...
-            }
-          }
-        ]
-      }
+    New:
+      per_view_bounding_boxes:
+        front_stereo_camera_left:
+          - {frame_idx, x0, y0, x1, y1}
+          - {frame_idx, x0, y0, x1, y1}
     """
-    label = payload.get("object_id", "")
-    per_view_boxes = payload.get("per_view_bounding_boxes") or {}
+    per_view_boxes = payload.get("per_view_bounding_boxes", {}) or {}
+
+    label = payload.get("object_id") or payload.get("object_name") or "object"
 
     output_dir = seq_dir / "labeled_bboxes"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     written_paths = []
 
-    for view, raw_box in per_view_boxes.items():
-        if raw_box is None:
+    for view, raw_boxes in per_view_boxes.items():
+        if raw_boxes is None:
             continue
 
-        frame_idx = bbox_frame_idx(raw_box)
-        frame_key = f"{frame_idx:06d}"
+        # Backward compatible:
+        # old format = one bbox dict
+        # new format = list of bbox dicts
+        if isinstance(raw_boxes, dict):
+            raw_boxes = [raw_boxes]
 
-        output = {
-            frame_key: [
+        if not isinstance(raw_boxes, list):
+            raise ValueError(f"Unsupported bbox format for {view}: {raw_boxes}")
+
+        output = {}
+
+        for raw_box in raw_boxes:
+            if raw_box is None:
+                continue
+
+            frame_idx = bbox_frame_idx(raw_box)
+            frame_key = f"{frame_idx:06d}"
+
+            output.setdefault(frame_key, []).append(
                 {
                     "label": label,
                     "box": bbox_to_xyxy(raw_box),
                 }
-            ]
-        }
+            )
+
+        if not output:
+            continue
 
         output_path = output_dir / f"{view}.json"
 
@@ -765,6 +869,24 @@ def api_submit(sequence_name):
     except Exception as e:
         return jsonify({"ok": False, "error": f"Failed to write labeled bbox files: {e}"}), 400
 
+    yaml_text = yaml.safe_dump(hoi_metadata, sort_keys=False)
+
+    # Always save local metadata.
+    local_metadata_path = seq_dir / "hoi_metadata.yaml"
+    local_metadata_path.write_text(yaml_text)
+
+    # Local test mode: do not upload to CSS.
+    if os.getenv("ALLOW_PROD_UPLOAD") != "1":
+        return jsonify({
+            "ok": True,
+            "mode": "local_only",
+            "saved_to": str(local_metadata_path),
+            "uploaded_to": None,
+            "uploaded_videos": [],
+            "uploaded_bboxes": [],
+            "metadata": hoi_metadata,
+        })
+
     uploaded_videos = []
     uploaded_bboxes = []
 
@@ -786,15 +908,15 @@ def api_submit(sequence_name):
         uploaded_bboxes.append(f"s3://{client.bucket}/{key}")
 
     # Upload metadata last, so metadata means sequence is complete.
-    yaml_text = yaml.safe_dump(hoi_metadata, sort_keys=False)
     metadata_key = client.upload_yaml_text(sequence_name, yaml_text)
 
     # Save local completion marker so this sequence disappears from ready list.
-    (seq_dir / "hoi_metadata.yaml").write_text(yaml_text)
     (seq_dir / ".prelabel_uploaded").write_text(metadata_key + "\n")
 
     return jsonify({
         "ok": True,
+        "mode": "css_upload",
+        "saved_to": str(local_metadata_path),
         "uploaded_to": f"s3://{client.bucket}/{metadata_key}",
         "uploaded_videos": uploaded_videos,
         "uploaded_bboxes": uploaded_bboxes,
@@ -803,8 +925,13 @@ def api_submit(sequence_name):
 
 
 if __name__ == "__main__":
-    if "multiview_test" not in client.base_prefix and os.getenv("ALLOW_PROD_UPLOAD") != "1":
-        raise SystemExit(f"Refusing to upload outside test prefix: {client.base_prefix}. Set ALLOW_PROD_UPLOAD=1 if intentional.")
+    prod_upload_enabled = os.getenv("ALLOW_PROD_UPLOAD") == "1"
+
+    if prod_upload_enabled and "multiview_test" not in client.base_prefix:
+        print("ALLOW_PROD_UPLOAD=1 set. Production CSS upload is enabled.")
+
+    if not prod_upload_enabled:
+        print("ALLOW_PROD_UPLOAD=0. Running in local-only test mode; CSS upload should be skipped.")
 
     print("Using CSS/PDX upload prefix:")
     print(f"  bucket: {client.bucket}")
